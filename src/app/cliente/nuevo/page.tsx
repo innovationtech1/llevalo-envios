@@ -117,7 +117,10 @@ export default function NewOrder() {
                   {q.quote.minimumApplied && <div><span>Se aplicó el mínimo</span><span>{money(settings?.minimum)}</span></div>}
                 </div>
               </>
-            : <div className="small muted">Elige las dos direcciones para ver el precio.</div>}
+            : <div className="small" style={{ color: 'var(--accent)', fontWeight: 700 }}>
+                Falta confirmar {!d.pickup && !d.dropoff ? 'las dos direcciones' : !d.pickup ? 'la dirección de recolección' : 'la dirección de entrega'}: escríbela, toca &quot;Buscar&quot; y elige una opción de la lista.
+              </div>}
+          {ready && (!d.senderName.trim() || !d.senderPhone.trim()) && <div className="small muted">Escribe tu nombre y teléfono en Contacto.</div>}
           <button className="btn primary block" type="submit" disabled={!ready}>
             {sending ? <span className="spin" /> : ready && q ? `Confirmar pedido · ${money(q.quote.total)}` : 'Confirmar pedido'}
           </button>

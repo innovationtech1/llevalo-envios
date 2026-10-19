@@ -5,8 +5,7 @@ import { useState, type FormEvent } from 'react';
 import AppShell from '@/components/AppShell';
 import Icon from '@/components/Icon';
 import { StatusBadge } from '@/components/orders';
-import { useOrdersQuery, useZonesQuery } from '@/store/api';
-import { useAppSelector } from '@/store/hooks';
+import { useMeQuery, useOrdersQuery, useZonesQuery } from '@/store/api';
 import { zoneForZip } from '@/lib/pricing';
 import { ACTIVE_STATUSES } from '@/lib/constants';
 
@@ -14,9 +13,10 @@ export default function ClientHome() {
   const [zip, setZip] = useState('');
   const [checked, setChecked] = useState('');
   const { data: zones } = useZonesQuery();
-  const phone = useAppSelector((s) => s.session.phone);
-  const { data: orders } = useOrdersQuery({ phone }, { skip: !phone, pollingInterval: 15000 });
+  const { data: me } = useMeQuery();
+  const { data: orders } = useOrdersQuery('mine', { skip: !me, pollingInterval: 15000 });
   const active = orders?.find((o) => ACTIVE_STATUSES.includes(o.status));
+  const unpaid = orders?.find((o) => o.status === 'por_pagar');
 
   const valid = /^\d{5}$/.test(checked);
   const zone = valid && zones ? zoneForZip(zones, checked) : null;
@@ -24,7 +24,7 @@ export default function ClientHome() {
 
   return (
     <AppShell role="cliente">
-      <h1>¿Qué quieres enviar hoy?</h1>
+      <h1>{me?.name ? `Hola, ${me.name.split(' ')[0]}. ¿Qué enviamos hoy?` : '¿Qué quieres enviar hoy?'}</h1>
       <form className="card dark" onSubmit={submit}>
         <label className="f" htmlFor="zip">Tu código postal define qué servicios tienes</label>
         <div className="in-row">
@@ -38,12 +38,15 @@ export default function ClientHome() {
         )}
       </form>
 
-      {active && (
-        <Link className="card order" href={`/cliente/envios/${active.id}`}>
-          <div className="row between"><span className="eyebrow">Envío activo #{active.num}</span><StatusBadge status={active.status} /></div>
-          <div className="small">{active.pickup.label} → {active.dropoff.label}</div>
-        </Link>
-      )}
+      {(active || unpaid) && (() => {
+        const o = (active || unpaid)!;
+        return (
+          <Link className="card order" href={`/cliente/envios/${o.id}`}>
+            <div className="row between"><span className="eyebrow">{o.status === 'por_pagar' ? 'Falta pagar' : 'Envío activo'} #{o.num}</span><StatusBadge status={o.status} /></div>
+            <div className="small">{o.pickup.label} → {o.dropoff.label}</div>
+          </Link>
+        );
+      })()}
 
       <div className="eyebrow">Servicios</div>
       <Link className="card svc" href="/cliente/nuevo">

@@ -1,14 +1,14 @@
 import { configureStore, createListenerMiddleware, isAnyOf } from '@reduxjs/toolkit';
 import { setupListeners } from '@reduxjs/toolkit/query';
 import { api } from './api';
-import session, { SESSION_KEY, setAdminPin, setOnline, setProfile, setRole } from './sessionSlice';
+import session, { SESSION_KEY, setOnline, setRole } from './sessionSlice';
 import draft from './draftSlice';
 import ui from './uiSlice';
 
 // Guarda la sesión (modo, nombre, teléfono) en el celular cada vez que cambia.
 const persist = createListenerMiddleware();
 persist.startListening({
-  matcher: isAnyOf(setRole, setProfile, setOnline, setAdminPin),
+  matcher: isAnyOf(setRole, setOnline),
   effect: (_action, api) => {
     const { hydrated, ...rest } = (api.getState() as { session: import('./sessionSlice').SessionState }).session;
     if (!hydrated) return;

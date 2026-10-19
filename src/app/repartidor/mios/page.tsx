@@ -4,16 +4,14 @@ import AppShell from '@/components/AppShell';
 import DriverGate from '@/components/DriverGate';
 import { Empty, OrderCard, Skeletons } from '@/components/orders';
 import { errorMessage, useOrdersQuery } from '@/store/api';
-import { useAppSelector } from '@/store/hooks';
 import { money } from '@/lib/format';
 
 export default function DriverMinePage() {
-  return <AppShell role="repartidor"><DriverGate><Mine /></DriverGate></AppShell>;
+  return <AppShell role="repartidor"><DriverGate>{() => <Mine />}</DriverGate></AppShell>;
 }
 
 function Mine() {
-  const name = useAppSelector((s) => s.session.name);
-  const { data, isLoading, error } = useOrdersQuery({ driver: name });
+  const { data, isLoading, error } = useOrdersQuery('driver');
   const total = (data ?? []).filter((o) => o.status === 'entregado').reduce((a, o) => a + o.driverPay, 0);
   return (
     <>

@@ -1,19 +1,22 @@
 import 'server-only';
 import { neon } from '@neondatabase/serverless';
 import { DEFAULT_SETTINGS, DEFAULT_ZONES } from '@/lib/constants';
-import type { Order, OrderStatus, Settings, Zone } from '@/lib/types';
+import type { DriverStatus, Order, OrderStatus, Settings, User, Zone } from '@/lib/types';
 
 /**
  * Acceso a datos. Dos implementaciones con la misma interfaz:
- *  - Postgres (Neon) cuando existe DATABASE_URL: datos permanentes y compartidos.
+ *  - Postgres (Neon) cuando existe la conexión: datos permanentes y compartidos.
  *  - Memoria cuando no existe: "modo demo", se borra al reiniciar el servidor.
  */
 export interface OrderFilter {
   status?: OrderStatus[];
-  phone?: string;
-  driver?: string;
+  customerId?: string;
+  driverId?: string;
   limit?: number;
 }
+
+/** Usuario guardado; `isAdmin` se calcula aparte (depende de ADMIN_PHONES). */
+export type StoredUser = Omit<User, 'isAdmin'>;
 
 export type NewOrder = Omit<Order, 'id' | 'num' | 'createdAt' | 'status' | 'history' | 'driver' | 'photo'>;
 
@@ -23,45 +26,70 @@ export interface Repo {
   saveSettings(s: Settings): Promise<Settings>;
   getZones(): Promise<Zone[]>;
   saveZones(z: Zone[]): Promise<Zone[]>;
+
+  getUser(id: string): Promise<StoredUser | null>;
+  getUserByPhone(phone: string): Promise<StoredUser | null>;
+  createUser(phone: string, name: string): Promise<StoredUser>;
+  updateUser(id: string, patch: Partial<Pick<StoredUser, 'name' | 'driverStatus'>>): Promise<StoredUser | null>;
+  listUsers(driverStatus?: DriverStatus[]): Promise<StoredUser[]>;
+
   listOrders(f?: OrderFilter): Promise<Order[]>;
   getOrder(id: string): Promise<Order | null>;
-  createOrder(o: NewOrder): Promise<Order>;
+  createOrder(o: NewOrder, status: OrderStatus): Promise<Order>;
   /** Cambia el estado solo si el pedido sigue en `from` (evita que dos repartidores tomen el mismo). */
   transition(id: string, from: OrderStatus[], to: OrderStatus, patch?: Partial<Order>): Promise<Order | null>;
   patchOrder(id: string, patch: Partial<Order>): Promise<Order | null>;
   clearOrders(): Promise<void>;
 }
 
-const newId = () => 'o' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const newId = (p: string) => p + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
 function matches(o: Order, f: OrderFilter) {
   if (f.status && !f.status.includes(o.status)) return false;
-  if (f.phone && o.senderPhone.replace(/\D/g, '') !== f.phone.replace(/\D/g, '')) return false;
-  if (f.driver && o.driver?.name.toLowerCase() !== f.driver.toLowerCase()) return false;
+  if (f.customerId && o.customerId !== f.customerId) return false;
+  if (f.driverId && o.driver?.id !== f.driverId) return false;
   return true;
 }
 
 /* ---------------- memoria (modo demo) ---------------- */
-interface MemState { settings: Settings; zones: Zone[]; orders: Order[]; counter: number }
+interface MemState { settings: Settings; zones: Zone[]; orders: Order[]; users: StoredUser[]; counter: number }
 const g = globalThis as unknown as { __llevaloMem?: MemState };
 
 class MemoryRepo implements Repo {
   readonly demo = true;
   private get s(): MemState {
-    if (!g.__llevaloMem) g.__llevaloMem = { settings: structuredClone(DEFAULT_SETTINGS), zones: structuredClone(DEFAULT_ZONES), orders: [], counter: 1000 };
+    if (!g.__llevaloMem) g.__llevaloMem = { settings: structuredClone(DEFAULT_SETTINGS), zones: structuredClone(DEFAULT_ZONES), orders: [], users: [], counter: 1000 };
     return g.__llevaloMem;
   }
   async getSettings() { return structuredClone(this.s.settings); }
   async saveSettings(v: Settings) { this.s.settings = structuredClone(v); return this.getSettings(); }
   async getZones() { return structuredClone(this.s.zones); }
   async saveZones(z: Zone[]) { this.s.zones = structuredClone(z); return this.getZones(); }
+
+  async getUser(id: string) { const u = this.s.users.find((x) => x.id === id); return u ? { ...u } : null; }
+  async getUserByPhone(phone: string) { const u = this.s.users.find((x) => x.phone === phone); return u ? { ...u } : null; }
+  async createUser(phone: string, name: string) {
+    const u: StoredUser = { id: newId('u'), phone, name, driverStatus: 'ninguno', createdAt: Date.now() };
+    this.s.users.push(u);
+    return { ...u };
+  }
+  async updateUser(id: string, patch: Partial<Pick<StoredUser, 'name' | 'driverStatus'>>) {
+    const u = this.s.users.find((x) => x.id === id);
+    if (!u) return null;
+    Object.assign(u, patch);
+    return { ...u };
+  }
+  async listUsers(driverStatus?: DriverStatus[]) {
+    return this.s.users.filter((u) => !driverStatus || driverStatus.includes(u.driverStatus)).map((u) => ({ ...u })).reverse();
+  }
+
   async listOrders(f: OrderFilter = {}) {
     return structuredClone(this.s.orders.filter((o) => matches(o, f)).slice(0, f.limit ?? 200));
   }
   async getOrder(id: string) { const o = this.s.orders.find((x) => x.id === id); return o ? structuredClone(o) : null; }
-  async createOrder(o: NewOrder) {
+  async createOrder(o: NewOrder, status: OrderStatus) {
     const now = Date.now();
-    const order: Order = { ...o, id: newId(), num: ++this.s.counter, createdAt: now, status: 'pendiente', history: [{ status: 'pendiente', at: now }], driver: null, photo: null };
+    const order: Order = { ...o, id: newId('o'), num: ++this.s.counter, createdAt: now, status, history: [{ status, at: now }], driver: null, photo: null };
     this.s.orders.unshift(order);
     return structuredClone(order);
   }
@@ -109,17 +137,34 @@ class PostgresRepo implements Repo {
           created_at timestamptz NOT NULL DEFAULT now(),
           data jsonb NOT NULL
         )`;
+        await this.q`ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_id text`;
+        await this.q`ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_id text`;
         await this.q`CREATE INDEX IF NOT EXISTS orders_status_idx ON orders (status)`;
-        await this.q`CREATE INDEX IF NOT EXISTS orders_phone_idx ON orders (sender_phone)`;
-        await this.q`CREATE INDEX IF NOT EXISTS orders_driver_idx ON orders (lower(driver_name))`;
+        await this.q`CREATE INDEX IF NOT EXISTS orders_customer_idx ON orders (customer_id)`;
+        await this.q`CREATE INDEX IF NOT EXISTS orders_driver_id_idx ON orders (driver_id)`;
+        await this.q`CREATE TABLE IF NOT EXISTS users (
+          id text PRIMARY KEY,
+          phone text UNIQUE NOT NULL,
+          name text NOT NULL DEFAULT '',
+          driver_status text NOT NULL DEFAULT 'ninguno',
+          created_at timestamptz NOT NULL DEFAULT now()
+        )`;
       })().catch((e) => { this.ready = null; throw e; });
     }
     return this.ready;
   }
 
   private toOrder(r: Row): Order {
-    const d = r.data as Order;
-    return { ...d, id: String(r.id), num: Number(r.num), status: r.status as OrderStatus, createdAt: new Date(r.created_at as string).getTime() };
+    const d = r.data as Partial<Order>;
+    return {
+      ...(d as Order),
+      payment: d.payment ?? { method: 'efectivo', status: 'pendiente' },
+      customerId: d.customerId ?? String(r.customer_id ?? ''),
+      id: String(r.id), num: Number(r.num), status: r.status as OrderStatus, createdAt: new Date(r.created_at as string).getTime()
+    };
+  }
+  private toUser(r: Row): StoredUser {
+    return { id: String(r.id), phone: String(r.phone), name: String(r.name ?? ''), driverStatus: r.driver_status as DriverStatus, createdAt: new Date(r.created_at as string).getTime() };
   }
 
   private async getKv<T>(key: string, fallback: T): Promise<T> {
@@ -142,16 +187,47 @@ class PostgresRepo implements Repo {
   getZones() { return this.getKv<Zone[]>('zones', DEFAULT_ZONES); }
   saveZones(z: Zone[]) { return this.setKv('zones', z); }
 
+  async getUser(id: string) {
+    await this.init();
+    const rows = await this.q`SELECT * FROM users WHERE id = ${id}`;
+    return rows.length ? this.toUser(rows[0]) : null;
+  }
+  async getUserByPhone(phone: string) {
+    await this.init();
+    const rows = await this.q`SELECT * FROM users WHERE phone = ${phone}`;
+    return rows.length ? this.toUser(rows[0]) : null;
+  }
+  async createUser(phone: string, name: string) {
+    await this.init();
+    const rows = await this.q`INSERT INTO users (id, phone, name) VALUES (${newId('u')}, ${phone}, ${name})
+      ON CONFLICT (phone) DO UPDATE SET phone = EXCLUDED.phone RETURNING *`;
+    return this.toUser(rows[0]);
+  }
+  async updateUser(id: string, patch: Partial<Pick<StoredUser, 'name' | 'driverStatus'>>) {
+    await this.init();
+    const rows = await this.q`UPDATE users SET
+        name = COALESCE(${patch.name ?? null}, name),
+        driver_status = COALESCE(${patch.driverStatus ?? null}, driver_status)
+      WHERE id = ${id} RETURNING *`;
+    return rows.length ? this.toUser(rows[0]) : null;
+  }
+  async listUsers(driverStatus?: DriverStatus[]) {
+    await this.init();
+    const st = driverStatus ?? null;
+    const rows = await this.q`SELECT * FROM users WHERE (${st}::text[] IS NULL OR driver_status = ANY(${st}::text[])) ORDER BY created_at DESC LIMIT 500`;
+    return rows.map((r) => this.toUser(r));
+  }
+
   async listOrders(f: OrderFilter = {}) {
     await this.init();
     const statuses = f.status ?? null;
-    const phone = f.phone ? f.phone.replace(/\D/g, '') : null;
-    const driver = f.driver ? f.driver.toLowerCase() : null;
+    const customer = f.customerId ?? null;
+    const driver = f.driverId ?? null;
     const limit = f.limit ?? 200;
     const rows = await this.q`SELECT * FROM orders
       WHERE (${statuses}::text[] IS NULL OR status = ANY(${statuses}::text[]))
-        AND (${phone}::text IS NULL OR sender_phone = ${phone})
-        AND (${driver}::text IS NULL OR lower(driver_name) = ${driver})
+        AND (${customer}::text IS NULL OR customer_id = ${customer})
+        AND (${driver}::text IS NULL OR driver_id = ${driver})
       ORDER BY created_at DESC LIMIT ${limit}`;
     return rows.map((r) => this.toOrder(r));
   }
@@ -162,13 +238,12 @@ class PostgresRepo implements Repo {
     return rows.length ? this.toOrder(rows[0]) : null;
   }
 
-  async createOrder(o: NewOrder) {
+  async createOrder(o: NewOrder, status: OrderStatus) {
     await this.init();
-    const id = newId();
     const now = Date.now();
-    const data = { ...o, history: [{ status: 'pendiente', at: now }], driver: null, photo: null };
-    const rows = await this.q`INSERT INTO orders (id, status, sender_phone, data)
-      VALUES (${id}, 'pendiente', ${o.senderPhone.replace(/\D/g, '')}, ${JSON.stringify(data)}::jsonb) RETURNING *`;
+    const data = { ...o, history: [{ status, at: now }], driver: null, photo: null };
+    const rows = await this.q`INSERT INTO orders (id, status, sender_phone, customer_id, data)
+      VALUES (${newId('o')}, ${status}, ${o.senderPhone.replace(/\D/g, '')}, ${o.customerId}, ${JSON.stringify(data)}::jsonb) RETURNING *`;
     return this.toOrder(rows[0]);
   }
 
@@ -177,10 +252,12 @@ class PostgresRepo implements Repo {
     const entry = JSON.stringify([{ status: to, at: Date.now() }]);
     const { id: _i, num: _n, status: _s, createdAt: _c, history: _h, ...rest } = patch;
     const driverName = patch.driver?.name ?? null;
+    const driverId = patch.driver?.id ?? null;
     // Actualización atómica: solo cambia si el estado actual está en `from`.
     const rows = await this.q`UPDATE orders SET
         status = ${to},
         driver_name = COALESCE(${driverName}, driver_name),
+        driver_id = COALESCE(${driverId}, driver_id),
         data = jsonb_set(data || ${JSON.stringify(rest)}::jsonb, '{history}', (data->'history') || ${entry}::jsonb)
       WHERE id = ${id} AND status = ANY(${from}::text[]) RETURNING *`;
     return rows.length ? this.toOrder(rows[0]) : null;

@@ -10,6 +10,7 @@ export const SIZES: { id: SizeId; label: string; hint: string }[] = [
 export const sizeLabel = (id: SizeId) => SIZES.find((s) => s.id === id)?.label ?? id;
 
 export const STATUS: Record<OrderStatus, { label: string; badge: string }> = {
+  por_pagar: { label: 'Esperando pago', badge: 'b-off' },
   pendiente: { label: 'Buscando repartidor', badge: 'b-warn' },
   asignado: { label: 'Repartidor en camino a recoger', badge: 'b-info' },
   recogido: { label: 'En camino a entregar', badge: 'b-acc' },
@@ -35,6 +36,20 @@ export const DEFAULT_ZONES: Zone[] = [
   { id: 'z1', name: 'San Antonio centro', prefixes: ['782'], local: true },
   { id: 'z2', name: 'Área metropolitana', prefixes: ['781', '780'], local: true }
 ];
+
+/** Convierte un teléfono de EE. UU. a formato +1XXXXXXXXXX. Devuelve null si no es válido. */
+export function normalizePhone(input: string): string | null {
+  const d = String(input || '').replace(/\D/g, '');
+  if (d.length === 10) return '+1' + d;
+  if (d.length === 11 && d.startsWith('1')) return '+' + d;
+  return null;
+}
+
+/** Muestra +12105551234 como (210) 555-1234. */
+export function prettyPhone(p: string): string {
+  const d = p.replace(/\D/g, '').slice(-10);
+  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : p;
+}
 
 // Tamaño máximo de la foto de entrega (ya comprimida en el celular).
 export const MAX_PHOTO_BYTES = 400_000;

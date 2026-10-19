@@ -11,7 +11,7 @@ import type { Role } from '@/lib/types';
 const TABS: Record<Role, [string, string, IconName][]> = {
   cliente: [['/cliente', 'Inicio', 'home'], ['/cliente/nuevo', 'Enviar', 'plus'], ['/cliente/envios', 'Mis envíos', 'list'], ['/perfil', 'Perfil', 'user']],
   repartidor: [['/repartidor', 'Trabajos', 'bike'], ['/repartidor/mios', 'Mis entregas', 'list'], ['/perfil', 'Perfil', 'user']],
-  admin: [['/admin', 'Resumen', 'chart'], ['/admin/tarifas', 'Tarifas', 'tag'], ['/admin/zonas', 'Zonas', 'map'], ['/perfil', 'Perfil', 'user']]
+  admin: [['/admin', 'Resumen', 'chart'], ['/admin/repartidores', 'Repartidores', 'bike'], ['/admin/tarifas', 'Tarifas', 'tag'], ['/admin/zonas', 'Zonas', 'map'], ['/perfil', 'Perfil', 'user']]
 };
 
 export const ROLE_NAME: Record<Role, string> = { cliente: 'Cliente', repartidor: 'Repartidor', admin: 'Administrador' };

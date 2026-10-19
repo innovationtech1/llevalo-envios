@@ -9,7 +9,6 @@ export interface DraftState {
   when: 'ahora' | 'prog';
   scheduledAt: string;
   senderName: string;
-  senderPhone: string;
   recName: string;
   recPhone: string;
   notes: string;
@@ -17,10 +16,10 @@ export interface DraftState {
 
 const initialDraft: DraftState = {
   pickup: null, dropoff: null, size: 'pequeno', when: 'ahora', scheduledAt: '',
-  senderName: '', senderPhone: '', recName: '', recPhone: '', notes: ''
+  senderName: '', recName: '', recPhone: '', notes: ''
 };
 
-type TextField = 'scheduledAt' | 'senderName' | 'senderPhone' | 'recName' | 'recPhone' | 'notes';
+type TextField = 'scheduledAt' | 'senderName' | 'recName' | 'recPhone' | 'notes';
 
 const draftSlice = createSlice({
   name: 'draft',
@@ -30,9 +29,8 @@ const draftSlice = createSlice({
     setSize: (s, a: PayloadAction<SizeId>) => { s.size = a.payload; },
     setWhen: (s, a: PayloadAction<'ahora' | 'prog'>) => { s.when = a.payload; },
     setField: (s, a: PayloadAction<{ field: TextField; value: string }>) => { s[a.payload.field] = a.payload.value; },
-    prefillContact: (s, a: PayloadAction<{ name: string; phone: string }>) => {
+    prefillContact: (s, a: PayloadAction<{ name: string }>) => {
       if (!s.senderName) s.senderName = a.payload.name;
-      if (!s.senderPhone) s.senderPhone = a.payload.phone;
     },
     resetDraft: () => initialDraft
   }

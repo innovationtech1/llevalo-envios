@@ -1,7 +1,6 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { timingSafeEqual } from 'node:crypto';
 
 export const ok = <T>(data: T, init?: ResponseInit) => NextResponse.json(data, init);
 
@@ -17,17 +16,6 @@ export async function parseBody<T extends z.ZodType>(req: Request, schema: T): P
     return { res: fail(422, first?.message || 'Datos inválidos', parsed.error.issues) };
   }
   return { data: parsed.data };
-}
-
-/** Protege las rutas del administrador con ADMIN_PIN (si está configurado). */
-export function requireAdmin(req: Request): NextResponse | null {
-  const pin = process.env.ADMIN_PIN;
-  if (!pin) return null; // modo pruebas: panel abierto
-  const sent = req.headers.get('x-admin-pin') || '';
-  const a = Buffer.from(sent);
-  const b = Buffer.from(pin);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) return fail(401, 'PIN de administrador incorrecto');
-  return null;
 }
 
 export function handleError(e: unknown) {

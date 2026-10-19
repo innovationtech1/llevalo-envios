@@ -23,11 +23,25 @@ App web instalable (PWA) para mensajería local en San Antonio, con tres modos: 
 
 ## Variables de entorno
 
-Ver `.env.example`. Ninguna es obligatoria para probar:
+Ver `.env.example`. Cada servicio se activa al poner su clave; sin ella, esa parte funciona en modo prueba:
 
-- `DATABASE_URL`: sin ella corre en **modo demo** (datos temporales).
-- `GOOGLE_MAPS_API_KEY`: sin ella usa OpenStreetMap.
-- `ADMIN_PIN`: sin ella el panel queda abierto.
+| Variable | Sin ella |
+|---|---|
+| `DATABASE_URL` (Neon) | Datos temporales en memoria |
+| `ADMIN_PHONES` | Panel abierto en modo demo; cerrado con base de datos real |
+| `GOOGLE_MAPS_API_KEY` | Búsqueda con OpenStreetMap (sin autocompletar) |
+| `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` | Pago en efectivo al entregar |
+| `TWILIO_*` | Código de prueba `123456` (admin: `ADMIN_PIN`) |
+
+## Cuentas y permisos
+
+- Todos entran con su teléfono y un código por SMS (Twilio Verify). La sesión es una cookie firmada de 30 días.
+- Cualquier cuenta puede pedir envíos. Para repartir, la persona lo solicita y el administrador la aprueba en **Admin → Repartidores**.
+- Administrador = teléfono incluido en `ADMIN_PHONES`.
+
+## Pagos
+
+Con Stripe, el pedido se crea como `por_pagar`, el cliente paga en Stripe Checkout y el pedido pasa a `pendiente` (visible para repartidores) cuando Stripe confirma el pago (webhook o al volver a la app). Si el cliente o el administrador cancelan, se reembolsa automáticamente.
 
 ## Comandos
 

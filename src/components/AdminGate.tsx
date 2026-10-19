@@ -1,37 +1,36 @@
 'use client';
 
-import { useState, type FormEvent, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import Icon from './Icon';
+import LoginForm from './LoginForm';
 import { Skeletons } from './orders';
-import { errorMessage, useCheckAdminMutation, useInfoQuery } from '@/store/api';
-import { useAppDispatch, useAppSelector } from '@/store/hooks';
-import { setAdminPin } from '@/store/sessionSlice';
+import { useInfoQuery, useMeQuery } from '@/store/api';
+import { prettyPhone } from '@/lib/constants';
 
-/** Si el servidor tiene ADMIN_PIN, pide el PIN antes de mostrar el panel. */
+/** Panel solo para los teléfonos de ADMIN_PHONES (abierto en modo demo si aún no se configura). */
 export default function AdminGate({ children }: { children: ReactNode }) {
   const { data: info, isLoading } = useInfoQuery();
-  const { hydrated, adminPin } = useAppSelector((s) => s.session);
-  const dispatch = useAppDispatch();
-  const [pin, setPin] = useState('');
-  const [check, { isLoading: checking, error }] = useCheckAdminMutation();
+  const { data: user, isLoading: loadingMe } = useMeQuery();
 
-  if (isLoading || !hydrated) return <Skeletons />;
-  if (!info?.adminPin || adminPin) return <>{children}</>;
-
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    try { await check(pin).unwrap(); dispatch(setAdminPin(pin)); } catch { /* el error se muestra abajo */ }
-  };
-
-  return (
-    <>
-      <h1>Panel de administrador</h1>
-      <form className="card" onSubmit={submit} style={{ maxWidth: 420 }}>
-        <div className="row"><Icon name="lock" /><b>Escribe tu PIN</b></div>
-        <input className="in" type="password" inputMode="numeric" autoComplete="current-password" aria-label="PIN de administrador" value={pin} onChange={(e) => setPin(e.target.value)} />
-        {error && <div className="err">{errorMessage(error)}</div>}
-        <button className="btn ink block" type="submit" disabled={!pin || checking}>{checking ? <span className="spin" /> : 'Entrar'}</button>
-      </form>
-    </>
-  );
+  if (isLoading || loadingMe || !info) return <Skeletons />;
+  if (!info.adminConfigured && info.demo) return <>{children}</>;
+  if (!user) return <LoginForm title="Panel de administrador" intro="Entra con el teléfono de administrador." />;
+  if (!info.adminConfigured) {
+    return (
+      <div className="card">
+        <div className="row"><Icon name="lock" /><h2>Falta un paso</h2></div>
+        <p className="muted">Para proteger el panel, agrega en Vercel la variable <b>ADMIN_PHONES</b> con tu número y vuelve a publicar.</p>
+        <p className="small">Tu número: <b>{prettyPhone(user.phone)}</b></p>
+      </div>
+    );
+  }
+  if (!user.isAdmin) {
+    return (
+      <div className="card">
+        <div className="row"><Icon name="lock" /><h2>Sin acceso</h2></div>
+        <p className="muted">Este panel es solo para el administrador.</p>
+      </div>
+    );
+  }
+  return <>{children}</>;
 }

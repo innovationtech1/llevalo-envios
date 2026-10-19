@@ -7,7 +7,7 @@ import DriverGate from '@/components/DriverGate';
 import Icon from '@/components/Icon';
 import { Empty, RouteCard, Skeletons, Timeline } from '@/components/orders';
 import { errorMessage, useOrderActionMutation, useOrderQuery } from '@/store/api';
-import { useAppDispatch, useAppSelector } from '@/store/hooks';
+import { useAppDispatch } from '@/store/hooks';
 import { showToast } from '@/store/uiSlice';
 import { STATUS } from '@/lib/constants';
 import { money } from '@/lib/format';
@@ -15,17 +15,15 @@ import { shrinkPhoto } from '@/lib/photo';
 
 export default function DriverOrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  return <AppShell role="repartidor"><DriverGate><DriverOrder id={id} /></DriverGate></AppShell>;
+  return <AppShell role="repartidor"><DriverGate>{(user) => <DriverOrder id={id} userId={user.id} />}</DriverGate></AppShell>;
 }
 
-function DriverOrder({ id }: { id: string }) {
+function DriverOrder({ id, userId }: { id: string; userId: string }) {
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const { name, phone } = useAppSelector((s) => s.session);
   const { data: o, isLoading, error } = useOrderQuery(id, { pollingInterval: 10000 });
   const [act, { isLoading: busy }] = useOrderActionMutation();
-  const driver = { name, phone };
-  const mine = o?.driver?.name.toLowerCase() === name.toLowerCase();
+  const mine = o?.driver?.id === userId;
 
   const run = async (body: Parameters<typeof act>[0], msg: string) => {
     try { await act(body).unwrap(); dispatch(showToast(msg)); return true; }
@@ -35,14 +33,14 @@ function DriverOrder({ id }: { id: string }) {
   const onPhoto = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !o) return;
-    try { await run({ id: o.id, action: 'photo', driver, photo: await shrinkPhoto(file) }, 'Foto guardada'); }
+    try { await run({ id: o.id, action: 'photo', photo: await shrinkPhoto(file) }, 'Foto guardada'); }
     catch { dispatch(showToast('No se pudo leer la foto')); }
   };
 
   const deliver = async () => {
     if (!o) return;
     if (!o.photo && !confirm('¿Entregar sin foto?')) return;
-    if (await run({ id: o.id, action: 'deliver', driver }, `¡Entregado! Ganaste ${money(o.driverPay)}`)) router.push('/repartidor');
+    if (await run({ id: o.id, action: 'deliver' }, `¡Entregado! Ganaste ${money(o.driverPay)}`)) router.push('/repartidor');
   };
 
   if (isLoading) return <Skeletons n={3} />;
@@ -51,7 +49,7 @@ function DriverOrder({ id }: { id: string }) {
   return (
     <>
       <BackHeader href="/repartidor" title={`Envío #${o.num}`} />
-      <div className="card dark"><span className="eyebrow">Ganas en este envío</span><span className="big">{money(o.driverPay)}</span><span className="small">{STATUS[o.status].label}</span></div>
+      <div className="card dark"><span className="eyebrow">Ganas en este envío</span><span className="big">{money(o.driverPay)}</span><span className="small">{STATUS[o.status].label}{o.payment.method === 'efectivo' && o.payment.status !== 'pagado' ? ` · Cobra ${money(o.price)} en efectivo al entregar` : ''}</span></div>
       <RouteCard o={o} withNav={mine} />
       {mine && (
         <div className="grid2">
@@ -60,7 +58,7 @@ function DriverOrder({ id }: { id: string }) {
         </div>
       )}
       {mine && o.status === 'asignado' && (
-        <button className="btn primary block" disabled={busy} onClick={() => run({ id: o.id, action: 'pickup', driver }, 'Paquete recogido')}>Ya recogí el paquete</button>
+        <button className="btn primary block" disabled={busy} onClick={() => run({ id: o.id, action: 'pickup' }, 'Paquete recogido')}>Ya recogí el paquete</button>
       )}
       {mine && o.status === 'recogido' && (
         <div className="card">

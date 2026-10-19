@@ -26,7 +26,6 @@ export const createOrderSchema = quoteRequestSchema.extend({
   when: z.enum(['ahora', 'prog']),
   scheduledAt: z.string().max(40).default(''),
   senderName: text(80).min(1, 'Escribe tu nombre'),
-  senderPhone: phone,
   recName: text(80).default(''),
   recPhone: z.union([phone, z.literal('')]).default(''),
   notes: text(300).default('')
@@ -34,14 +33,12 @@ export const createOrderSchema = quoteRequestSchema.extend({
   message: 'Elige día y hora', path: ['scheduledAt']
 });
 
-const driverSchema = z.object({ name: text(80).min(1, 'Falta el nombre del repartidor'), phone: z.string().trim().max(20).default('') });
-
 export const orderActionSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('accept'), driver: driverSchema }),
-  z.object({ action: z.literal('pickup'), driver: driverSchema }),
-  z.object({ action: z.literal('deliver'), driver: driverSchema }),
-  z.object({ action: z.literal('photo'), driver: driverSchema, photo: z.string().startsWith('data:image/jpeg;base64,').max(MAX_PHOTO_BYTES) }),
-  z.object({ action: z.literal('cancel'), phone: z.string().optional() })
+  z.object({ action: z.literal('accept') }),
+  z.object({ action: z.literal('pickup') }),
+  z.object({ action: z.literal('deliver') }),
+  z.object({ action: z.literal('photo'), photo: z.string().startsWith('data:image/jpeg;base64,').max(MAX_PHOTO_BYTES) }),
+  z.object({ action: z.literal('cancel') })
 ]);
 
 export const settingsSchema = z.object({

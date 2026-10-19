@@ -11,17 +11,18 @@ import { setOnline } from '@/store/sessionSlice';
 import { showToast } from '@/store/uiSlice';
 import { sizeLabel } from '@/lib/constants';
 import { isToday, money } from '@/lib/format';
+import type { User } from '@/lib/types';
 
 export default function DriverHome() {
-  return <AppShell role="repartidor"><DriverGate><Jobs /></DriverGate></AppShell>;
+  return <AppShell role="repartidor"><DriverGate>{(user) => <Jobs user={user} />}</DriverGate></AppShell>;
 }
 
-function Jobs() {
+function Jobs({ user }: { user: User }) {
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const { name, phone, online } = useAppSelector((s) => s.session);
-  const { data: mine } = useOrdersQuery({ driver: name }, { pollingInterval: 10000 });
-  const { data: avail, isLoading, error } = useOrdersQuery({ status: ['pendiente'] }, { skip: !online, pollingInterval: 5000, skipPollingIfUnfocused: true });
+  const online = useAppSelector((s) => s.session.online);
+  const { data: mine } = useOrdersQuery('driver', { pollingInterval: 10000 });
+  const { data: avail, isLoading, error } = useOrdersQuery('jobs', { skip: !online, pollingInterval: 5000, skipPollingIfUnfocused: true });
   const [act, { isLoading: busy }] = useOrderActionMutation();
 
   const active = (mine ?? []).filter((o) => o.status === 'asignado' || o.status === 'recogido');
@@ -30,7 +31,7 @@ function Jobs() {
 
   const accept = async (id: string) => {
     try {
-      await act({ id, action: 'accept', driver: { name, phone } }).unwrap();
+      await act({ id, action: 'accept' }).unwrap();
       dispatch(showToast('Envío aceptado. Ve a recogerlo.'));
       router.push(`/repartidor/envios/${id}`);
     } catch (e) { dispatch(showToast(errorMessage(e))); }
@@ -39,7 +40,7 @@ function Jobs() {
   return (
     <>
       <div className="row between">
-        <div className="stack" style={{ gap: 2 }}><span className="small muted">Modo repartidor</span><h1 style={{ fontSize: 26 }}>Hola, {name}</h1></div>
+        <div className="stack" style={{ gap: 2 }}><span className="small muted">Modo repartidor</span><h1 style={{ fontSize: 26 }}>Hola, {user.name.split(' ')[0]}</h1></div>
         <label className="row small" style={{ gap: 8, fontWeight: 700 }}>
           {online ? 'En línea' : 'Desconectado'}
           <span className="switch"><input type="checkbox" checked={online} onChange={(e) => dispatch(setOnline(e.target.checked))} aria-label="Estar en línea" /><span /></span>
@@ -62,7 +63,10 @@ function Jobs() {
         : avail?.length ? (
           <div className="list">{avail.map((o) => (
             <div className="card" key={o.id}>
-              <div className="row between"><span className="badge b-acc">Mensajería local</span><b className="big" style={{ fontSize: 20 }}>{money(o.driverPay)}</b></div>
+              <div className="row between">
+                <span className="badge b-acc">{o.payment.method === 'tarjeta' ? 'Pagado con tarjeta' : 'Cobrar al entregar'}</span>
+                <b className="big" style={{ fontSize: 20 }}>{money(o.driverPay)}</b>
+              </div>
               <div className="stack small">
                 <div className="row" style={{ gap: 8 }}><span className="dot" />{o.pickup.label}</div>
                 <div className="row" style={{ gap: 8 }}><span className="sq" />{o.dropoff.label}</div>

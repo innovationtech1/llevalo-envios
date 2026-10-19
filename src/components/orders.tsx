@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 import Icon from './Icon';
-import { STATUS, sizeLabel } from '@/lib/constants';
+import { STATUS, prettyPhone, sizeLabel } from '@/lib/constants';
 import { fmtDate, fmtTime, money } from '@/lib/format';
 import type { Order, OrderStatus } from '@/lib/types';
 
@@ -62,12 +62,12 @@ export function RouteCard({ o, withNav = false }: { o: Order; withNav?: boolean 
         <div className="stack" style={{ flex: 1, gap: 14 }}>
           <div className="row between" style={{ alignItems: 'flex-start' }}>
             <div className="stack" style={{ gap: 2 }}><span style={label}>Recoger</span><span>{o.pickup.label}</span>
-              <span className="tiny muted">{o.senderName}{o.senderPhone ? ' · ' + o.senderPhone : ''}</span></div>
+              <span className="tiny muted">{o.senderName}{o.senderPhone ? ' · ' + prettyPhone(o.senderPhone) : ''}</span></div>
             {nav(o.pickup)}
           </div>
           <div className="row between" style={{ alignItems: 'flex-start' }}>
             <div className="stack" style={{ gap: 2 }}><span style={label}>Entregar</span><span>{o.dropoff.label}</span>
-              <span className="tiny muted">{o.recName || 'Sin nombre'}{o.recPhone ? ' · ' + o.recPhone : ''}</span></div>
+              <span className="tiny muted">{o.recName || 'Sin nombre'}{o.recPhone ? ' · ' + prettyPhone(o.recPhone) : ''}</span></div>
             {nav(o.dropoff)}
           </div>
         </div>

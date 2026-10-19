@@ -1,0 +1,32 @@
+{
+  "name": "llevalo",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Llévalo — mensajería local en San Antonio (Next.js + Redux Toolkit)",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.0",
+    "@reduxjs/toolkit": "^2.9.0",
+    "next": "16.4.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "react-redux": "^9.2.0",
+    "server-only": "^0.0.1",
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

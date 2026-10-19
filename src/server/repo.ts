@@ -196,8 +196,15 @@ class PostgresRepo implements Repo {
   async clearOrders() { await this.init(); await this.q`DELETE FROM orders`; }
 }
 
+/** Vercel + Neon puede nombrar la conexión de varias formas; usamos la primera que exista. */
+export function databaseUrl(): string | undefined {
+  const env = process.env;
+  return env.DATABASE_URL || env.POSTGRES_URL || env.NEON_DATABASE_URL
+    || Object.entries(env).find(([k, v]) => /_(DATABASE_URL|POSTGRES_URL)$/.test(k) && v)?.[1];
+}
+
 let repo: Repo | null = null;
 export function getRepo(): Repo {
-  if (!repo) repo = process.env.DATABASE_URL ? new PostgresRepo(process.env.DATABASE_URL) : new MemoryRepo();
+  if (!repo) { const url = databaseUrl(); repo = url ? new PostgresRepo(url) : new MemoryRepo(); }
   return repo;
 }

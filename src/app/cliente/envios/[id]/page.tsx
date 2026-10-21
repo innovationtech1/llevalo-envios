@@ -6,7 +6,7 @@ import AppShell, { BackHeader } from '@/components/AppShell';
 import AuthGate from '@/components/AuthGate';
 import Icon from '@/components/Icon';
 import { Empty, RouteCard, Skeletons, Timeline } from '@/components/orders';
-import { errorMessage, useConfirmPaymentMutation, useOrderActionMutation, useOrderQuery, usePayOrderMutation } from '@/store/api';
+import { errorMessage, useConfirmPaymentMutation, useOrderActionMutation, useOrderQuery, usePayOrderMutation, useSettingsQuery } from '@/store/api';
 import { useAppDispatch } from '@/store/hooks';
 import { showToast } from '@/store/uiSlice';
 import { ACTIVE_STATUSES, STATUS } from '@/lib/constants';
@@ -27,6 +27,7 @@ function ClientOrder({ id }: { id: string }) {
   const search = useSearchParams();
   const dispatch = useAppDispatch();
   const { data: o, isLoading, error } = useOrderQuery(id, { pollingInterval: 5000, skipPollingIfUnfocused: true });
+  const { data: settings } = useSettingsQuery();
   const [act, { isLoading: busy }] = useOrderActionMutation();
   const [pay, { isLoading: opening }] = usePayOrderMutation();
   const [confirm] = useConfirmPaymentMutation();
@@ -50,8 +51,12 @@ function ClientOrder({ id }: { id: string }) {
   const cancel = async () => {
     if (!o) return;
     const paid = o.payment.method === 'tarjeta' && o.payment.status === 'pagado';
-    if (!window.confirm(paid ? '¿Cancelar este pedido? Te devolveremos el dinero a tu tarjeta.' : '¿Cancelar este pedido?')) return;
-    try { await act({ id: o.id, action: 'cancel' }).unwrap(); dispatch(showToast(paid ? 'Pedido cancelado. El reembolso llega en 5–10 días.' : 'Pedido cancelado')); }
+    const fee = o.status === 'asignado' ? Math.min(settings?.cancelFee ?? 0, o.price) : 0;
+    const msg = fee > 0
+      ? `Un repartidor ya va en camino. Si cancelas se cobra ${money(fee)} (se le paga a él)${paid ? ` y te devolvemos ${money(o.price - fee)}` : ''}. ¿Cancelar?`
+      : paid ? '¿Cancelar este pedido? Te devolveremos el total a tu tarjeta.' : '¿Cancelar este pedido?';
+    if (!window.confirm(msg)) return;
+    try { await act({ id: o.id, action: 'cancel' }).unwrap(); dispatch(showToast(paid ? 'Pedido cancelado. El reembolso puede tardar 5–10 días en verse.' : 'Pedido cancelado')); }
     catch (e) { dispatch(showToast(errorMessage(e))); }
   };
 
@@ -68,7 +73,7 @@ function ClientOrder({ id }: { id: string }) {
   if (error || !o) return <Empty icon="box"><p>{errorMessage(error, 'No encontramos este envío.')}</p></Empty>;
 
   const paymentLabel = o.payment.method === 'tarjeta'
-    ? { pendiente: 'Pago con tarjeta pendiente', pagado: 'Pagado con tarjeta', reembolsado: 'Reembolsado a tu tarjeta' }[o.payment.status]
+    ? { pendiente: 'Pago con tarjeta pendiente', pagado: 'Pagado con tarjeta', reembolsado: 'Reembolsado a tu tarjeta', reembolso_parcial: `Reembolsado ${money(o.payment.refunded)} a tu tarjeta (se cobró el cargo de cancelación)` }[o.payment.status]
     : o.payment.status === 'pagado' ? 'Pagado en efectivo' : 'Pagas al entregar';
 
   return (
@@ -102,8 +107,9 @@ function ClientOrder({ id }: { id: string }) {
       <div className="card">
         <div className="row between"><span className="muted">Total</span><span className="big" style={{ fontSize: 22 }}>{money(o.price)}</span></div>
         <div className="tiny muted">{paymentLabel}</div>
+        {o.declaredValue > 0 && <div className="tiny muted">Valor declarado: {money(o.declaredValue)}</div>}
       </div>
-      {(o.status === 'pendiente' || o.status === 'por_pagar') && <button className="btn danger block" onClick={cancel} disabled={busy}>Cancelar pedido</button>}
+      {(o.status === 'pendiente' || o.status === 'por_pagar' || o.status === 'asignado') && <button className="btn danger block" onClick={cancel} disabled={busy}>Cancelar pedido{o.status === 'asignado' && settings?.cancelFee ? ` (cargo ${money(settings.cancelFee)})` : ''}</button>}
     </>
   );
 }

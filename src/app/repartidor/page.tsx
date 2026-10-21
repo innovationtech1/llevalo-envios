@@ -5,7 +5,8 @@ import AppShell from '@/components/AppShell';
 import DriverGate from '@/components/DriverGate';
 import Icon from '@/components/Icon';
 import { Empty, OrderCard, Skeletons } from '@/components/orders';
-import { errorMessage, useOrderActionMutation, useOrdersQuery } from '@/store/api';
+import { errorMessage, useDriverPayoutsQuery, useOrderActionMutation, useOrdersQuery } from '@/store/api';
+import Link from 'next/link';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { setOnline } from '@/store/sessionSlice';
 import { showToast } from '@/store/uiSlice';
@@ -24,6 +25,8 @@ function Jobs({ user }: { user: User }) {
   const { data: mine } = useOrdersQuery('driver', { pollingInterval: 10000 });
   const { data: avail, isLoading, error } = useOrdersQuery('jobs', { skip: !online, pollingInterval: 5000, skipPollingIfUnfocused: true });
   const [act, { isLoading: busy }] = useOrderActionMutation();
+  const { data: payouts } = useDriverPayoutsQuery();
+  const canAccept = Boolean(user.driverTermsAt) && (!payouts || !payouts.enabled || payouts.payoutsEnabled);
 
   const active = (mine ?? []).filter((o) => o.status === 'asignado' || o.status === 'recogido');
   const doneToday = (mine ?? []).filter((o) => o.status === 'entregado' && isToday(o.history[o.history.length - 1].at));
@@ -46,6 +49,11 @@ function Jobs({ user }: { user: User }) {
           <span className="switch"><input type="checkbox" checked={online} onChange={(e) => dispatch(setOnline(e.target.checked))} aria-label="Estar en línea" /><span /></span>
         </label>
       </div>
+      {!canAccept && (
+        <Link className="notice" href="/repartidor/cobros" style={{ textDecoration: 'none' }}>
+          <Icon name="info" size={18} /><span><b>Falta un paso:</b> {!user.driverTermsAt ? 'acepta el acuerdo de repartidor' : 'configura tu cuenta de cobros'} para poder aceptar envíos. Toca aquí.</span>
+        </Link>
+      )}
       <div className="grid2">
         <div className="card dark" style={{ gap: 4 }}><span className="small muted">Ganado hoy</span><span className="big" style={{ fontSize: 24 }}>{money(earned)}</span></div>
         <div className="card dark" style={{ gap: 4 }}><span className="small muted">Entregas hoy</span><span className="big" style={{ fontSize: 24 }}>{doneToday.length}</span></div>
@@ -73,7 +81,7 @@ function Jobs({ user }: { user: User }) {
               </div>
               <div className="row between">
                 <span className="small muted">{o.miles} mi · {sizeLabel(o.size)}{o.when === 'prog' ? ' · Programado' : ''}</span>
-                <button className="btn ink sm" onClick={() => accept(o.id)} disabled={busy || active.length > 0} title={active.length ? 'Termina tu envío actual primero' : undefined}>Aceptar</button>
+                <button className="btn ink sm" onClick={() => accept(o.id)} disabled={busy || active.length > 0 || !canAccept} title={!canAccept ? 'Completa tu configuración en Cobros' : active.length ? 'Termina tu envío actual primero' : undefined}>Aceptar</button>
               </div>
             </div>
           ))}</div>

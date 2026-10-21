@@ -8,9 +8,10 @@ import AuthGate from '@/components/AuthGate';
 import Icon from '@/components/Icon';
 import { errorMessage, useCreateOrderMutation, useInfoQuery, useQuoteQuery, useSettingsQuery } from '@/store/api';
 import { useAppDispatch, useAppSelector } from '@/store/hooks';
-import { prefillContact, resetDraft, setField, setPlace, setSize, setWhen } from '@/store/draftSlice';
+import { prefillContact, resetDraft, setAcceptTerms, setField, setPlace, setSize, setWhen } from '@/store/draftSlice';
 import { showToast } from '@/store/uiSlice';
-import { SIZES, prettyPhone, sizeLabel } from '@/lib/constants';
+import { PROHIBITED_ITEMS, SIZES, prettyPhone, sizeLabel } from '@/lib/constants';
+import Link from 'next/link';
 import { money } from '@/lib/format';
 import type { User } from '@/lib/types';
 
@@ -40,14 +41,14 @@ function NewOrder({ user }: { user: User }) {
 
   useEffect(() => { dispatch(prefillContact({ name: user.name })); }, [user.name, dispatch]);
 
-  const field = (f: 'scheduledAt' | 'senderName' | 'recName' | 'recPhone' | 'notes') => ({
+  const field = (f: 'scheduledAt' | 'senderName' | 'recName' | 'recPhone' | 'notes' | 'declaredValue') => ({
     value: d[f],
     onChange: (e: { target: { value: string } }) => dispatch(setField({ field: f, value: e.target.value }))
   });
 
   const problems = q?.problems ?? [];
   const busy = sending || redirecting;
-  const ready = both && q && !quoting && !problems.length && !busy;
+  const ready = both && q && !quoting && !problems.length && !busy && d.acceptTerms;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -55,7 +56,10 @@ function NewOrder({ user }: { user: User }) {
     if (!d.senderName.trim()) { dispatch(showToast('Escribe tu nombre')); return; }
     if (d.when === 'prog' && !d.scheduledAt) { dispatch(showToast('Elige día y hora')); return; }
     try {
-      const r = await createOrder({ ...d, pickup: d.pickup, dropoff: d.dropoff }).unwrap();
+      const r = await createOrder({
+        ...d, pickup: d.pickup, dropoff: d.dropoff, acceptTerms: true,
+        declaredValue: Math.max(0, Number(d.declaredValue) || 0)
+      }).unwrap();
       dispatch(resetDraft());
       if (r.checkoutUrl) {
         setRedirecting(true);
@@ -112,6 +116,23 @@ function NewOrder({ user }: { user: User }) {
         <div className="stack"><label className="f" htmlFor="nt">Notas para el repartidor (opcional)</label><input className="in" id="nt" placeholder="Ej. tocar el timbre, frágil" {...field('notes')} /></div>
       </div>
 
+      <div className="card">
+        <div className="eyebrow">Contenido del paquete</div>
+        <div className="stack">
+          <label className="f" htmlFor="dv">Valor aproximado del contenido (USD)</label>
+          <input className="in" id="dv" type="number" inputMode="decimal" min="0" step="1" placeholder="0" {...field('declaredValue')} />
+          <span className="tiny muted">Si se pierde o daña, cubrimos hasta este valor{settings ? `, con un máximo de ${money(settings.coverageMax)}` : ''}.</span>
+        </div>
+        <details className="prohibited">
+          <summary>Ver artículos prohibidos</summary>
+          <ul>{PROHIBITED_ITEMS.map((x) => <li key={x}>{x}</li>)}</ul>
+        </details>
+        <label className="check">
+          <input type="checkbox" checked={d.acceptTerms} onChange={(e) => dispatch(setAcceptTerms(e.target.checked))} />
+          <span>Confirmo que mi paquete no contiene artículos prohibidos y acepto los <Link href="/terminos" target="_blank">Términos</Link> y el <Link href="/privacidad" target="_blank">Aviso de privacidad</Link>.</span>
+        </label>
+      </div>
+
       {problems.length > 0 && <div className="notice"><Icon name="info" size={18} /><div>{problems.map((p) => <div key={p}>{p}</div>)}</div></div>}
 
       <div className="quote">
@@ -133,11 +154,14 @@ function NewOrder({ user }: { user: User }) {
               </div>
             </>
           : <div className="small" style={{ color: 'var(--accent)', fontWeight: 700 }}>Falta elegir {missing}.</div>}
+        {both && q && !problems.length && !d.acceptTerms && <div className="small" style={{ color: 'var(--accent)', fontWeight: 700 }}>Marca la casilla de Términos para continuar.</div>}
         <button className="btn primary block" type="submit" disabled={!ready}>
           {busy ? <span className="spin" /> : ready && q ? `${card ? 'Pagar' : 'Confirmar pedido'} · ${money(q.quote.total)}` : card ? 'Pagar' : 'Confirmar pedido'}
         </button>
         <div className="tiny muted" style={{ textAlign: 'center' }}>
-          {card ? 'Pago seguro con tarjeta (Stripe). Si cancelas antes de que lo acepten, te devolvemos el dinero.' : 'Pagas al repartidor cuando entregue.'}
+          {card
+            ? `Pago seguro con tarjeta (Stripe). Cancelación gratis antes de que un repartidor acepte${settings?.cancelFee ? `; después, cargo de ${money(settings.cancelFee)}` : ''}.`
+            : 'Pagas al repartidor cuando entregue.'}
         </div>
       </div>
     </form>

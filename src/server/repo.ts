@@ -18,6 +18,8 @@ export interface OrderFilter {
 /** Usuario guardado; `isAdmin` se calcula aparte (depende de ADMIN_PHONES). */
 export type StoredUser = Omit<User, 'isAdmin'>;
 
+export type UserPatch = Partial<Pick<StoredUser, 'name' | 'driverStatus' | 'stripeAccountId' | 'payoutsEnabled' | 'driverTermsAt'>>;
+
 export type NewOrder = Omit<Order, 'id' | 'num' | 'createdAt' | 'status' | 'history' | 'driver' | 'photo'>;
 
 export interface Repo {
@@ -30,8 +32,10 @@ export interface Repo {
   getUser(id: string): Promise<StoredUser | null>;
   getUserByPhone(phone: string): Promise<StoredUser | null>;
   createUser(phone: string, name: string): Promise<StoredUser>;
-  updateUser(id: string, patch: Partial<Pick<StoredUser, 'name' | 'driverStatus'>>): Promise<StoredUser | null>;
+  updateUser(id: string, patch: UserPatch): Promise<StoredUser | null>;
   listUsers(driverStatus?: DriverStatus[]): Promise<StoredUser[]>;
+  getUserByStripeAccount(accountId: string): Promise<StoredUser | null>;
+  getOrderByPaymentIntent(pi: string): Promise<Order | null>;
 
   listOrders(f?: OrderFilter): Promise<Order[]>;
   getOrder(id: string): Promise<Order | null>;
@@ -69,11 +73,11 @@ class MemoryRepo implements Repo {
   async getUser(id: string) { const u = this.s.users.find((x) => x.id === id); return u ? { ...u } : null; }
   async getUserByPhone(phone: string) { const u = this.s.users.find((x) => x.phone === phone); return u ? { ...u } : null; }
   async createUser(phone: string, name: string) {
-    const u: StoredUser = { id: newId('u'), phone, name, driverStatus: 'ninguno', createdAt: Date.now() };
+    const u: StoredUser = { id: newId('u'), phone, name, driverStatus: 'ninguno', createdAt: Date.now(), stripeAccountId: null, payoutsEnabled: false, driverTermsAt: null };
     this.s.users.push(u);
     return { ...u };
   }
-  async updateUser(id: string, patch: Partial<Pick<StoredUser, 'name' | 'driverStatus'>>) {
+  async updateUser(id: string, patch: UserPatch) {
     const u = this.s.users.find((x) => x.id === id);
     if (!u) return null;
     Object.assign(u, patch);
@@ -82,6 +86,8 @@ class MemoryRepo implements Repo {
   async listUsers(driverStatus?: DriverStatus[]) {
     return this.s.users.filter((u) => !driverStatus || driverStatus.includes(u.driverStatus)).map((u) => ({ ...u })).reverse();
   }
+  async getUserByStripeAccount(accountId: string) { const u = this.s.users.find((x) => x.stripeAccountId === accountId); return u ? { ...u } : null; }
+  async getOrderByPaymentIntent(pi: string) { const o = this.s.orders.find((x) => x.payment.paymentIntent === pi); return o ? structuredClone(o) : null; }
 
   async listOrders(f: OrderFilter = {}) {
     return structuredClone(this.s.orders.filter((o) => matches(o, f)).slice(0, f.limit ?? 200));
@@ -149,6 +155,11 @@ class PostgresRepo implements Repo {
           driver_status text NOT NULL DEFAULT 'ninguno',
           created_at timestamptz NOT NULL DEFAULT now()
         )`;
+        await this.q`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_account_id text`;
+        await this.q`ALTER TABLE users ADD COLUMN IF NOT EXISTS payouts_enabled boolean NOT NULL DEFAULT false`;
+        await this.q`ALTER TABLE users ADD COLUMN IF NOT EXISTS driver_terms_at timestamptz`;
+        await this.q`CREATE UNIQUE INDEX IF NOT EXISTS users_stripe_idx ON users (stripe_account_id) WHERE stripe_account_id IS NOT NULL`;
+        await this.q`CREATE INDEX IF NOT EXISTS orders_pi_idx ON orders ((data->'payment'->>'paymentIntent'))`;
       })().catch((e) => { this.ready = null; throw e; });
     }
     return this.ready;
@@ -159,12 +170,21 @@ class PostgresRepo implements Repo {
     return {
       ...(d as Order),
       payment: d.payment ?? { method: 'efectivo', status: 'pendiente' },
+      declaredValue: d.declaredValue ?? 0,
+      termsVersion: d.termsVersion ?? '',
+      termsAt: d.termsAt ?? 0,
       customerId: d.customerId ?? String(r.customer_id ?? ''),
       id: String(r.id), num: Number(r.num), status: r.status as OrderStatus, createdAt: new Date(r.created_at as string).getTime()
     };
   }
   private toUser(r: Row): StoredUser {
-    return { id: String(r.id), phone: String(r.phone), name: String(r.name ?? ''), driverStatus: r.driver_status as DriverStatus, createdAt: new Date(r.created_at as string).getTime() };
+    return {
+      id: String(r.id), phone: String(r.phone), name: String(r.name ?? ''), driverStatus: r.driver_status as DriverStatus,
+      createdAt: new Date(r.created_at as string).getTime(),
+      stripeAccountId: r.stripe_account_id ? String(r.stripe_account_id) : null,
+      payoutsEnabled: Boolean(r.payouts_enabled),
+      driverTermsAt: r.driver_terms_at ? new Date(r.driver_terms_at as string).getTime() : null
+    };
   }
 
   private async getKv<T>(key: string, fallback: T): Promise<T> {
@@ -203,11 +223,15 @@ class PostgresRepo implements Repo {
       ON CONFLICT (phone) DO UPDATE SET phone = EXCLUDED.phone RETURNING *`;
     return this.toUser(rows[0]);
   }
-  async updateUser(id: string, patch: Partial<Pick<StoredUser, 'name' | 'driverStatus'>>) {
+  async updateUser(id: string, patch: UserPatch) {
     await this.init();
+    const terms = patch.driverTermsAt ? new Date(patch.driverTermsAt).toISOString() : null;
     const rows = await this.q`UPDATE users SET
         name = COALESCE(${patch.name ?? null}, name),
-        driver_status = COALESCE(${patch.driverStatus ?? null}, driver_status)
+        driver_status = COALESCE(${patch.driverStatus ?? null}, driver_status),
+        stripe_account_id = COALESCE(${patch.stripeAccountId ?? null}, stripe_account_id),
+        payouts_enabled = COALESCE(${patch.payoutsEnabled ?? null}::boolean, payouts_enabled),
+        driver_terms_at = COALESCE(${terms}::timestamptz, driver_terms_at)
       WHERE id = ${id} RETURNING *`;
     return rows.length ? this.toUser(rows[0]) : null;
   }
@@ -216,6 +240,16 @@ class PostgresRepo implements Repo {
     const st = driverStatus ?? null;
     const rows = await this.q`SELECT * FROM users WHERE (${st}::text[] IS NULL OR driver_status = ANY(${st}::text[])) ORDER BY created_at DESC LIMIT 500`;
     return rows.map((r) => this.toUser(r));
+  }
+  async getUserByStripeAccount(accountId: string) {
+    await this.init();
+    const rows = await this.q`SELECT * FROM users WHERE stripe_account_id = ${accountId}`;
+    return rows.length ? this.toUser(rows[0]) : null;
+  }
+  async getOrderByPaymentIntent(pi: string) {
+    await this.init();
+    const rows = await this.q`SELECT * FROM orders WHERE data->'payment'->>'paymentIntent' = ${pi} LIMIT 1`;
+    return rows.length ? this.toOrder(rows[0]) : null;
   }
 
   async listOrders(f: OrderFilter = {}) {

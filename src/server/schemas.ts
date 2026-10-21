@@ -28,7 +28,9 @@ export const createOrderSchema = quoteRequestSchema.extend({
   senderName: text(80).min(1, 'Escribe tu nombre'),
   recName: text(80).default(''),
   recPhone: z.union([phone, z.literal('')]).default(''),
-  notes: text(300).default('')
+  notes: text(300).default(''),
+  declaredValue: z.coerce.number().min(0).max(10000).default(0),
+  acceptTerms: z.literal(true, { error: 'Debes aceptar los términos y confirmar que no envías artículos prohibidos' })
 }).refine((o) => o.when === 'ahora' || (o.scheduledAt && !Number.isNaN(Date.parse(o.scheduledAt))), {
   message: 'Elige día y hora', path: ['scheduledAt']
 });
@@ -48,7 +50,10 @@ export const settingsSchema = z.object({
   extras: z.object({ sobre: money, pequeno: money, mediano: money, grande: money }),
   driverBase: money,
   driverPerMile: money,
-  maxMiles: z.coerce.number().min(1).max(200)
+  maxMiles: z.coerce.number().min(1).max(200),
+  cancelFee: money,
+  coverageMax: z.coerce.number().min(0).max(10000),
+  instantPayouts: z.boolean()
 });
 
 export const zonesSchema = z.array(z.object({

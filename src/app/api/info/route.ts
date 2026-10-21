@@ -14,7 +14,8 @@ export async function GET() {
     maps: mapsProvider(),
     payments: paymentsMode(),
     sms: smsMode(),
-    adminConfigured: adminPhones().length > 0
+    adminConfigured: adminPhones().length > 0,
+    legalConfigured: Boolean(process.env.LEGAL_NAME && process.env.LEGAL_EMAIL)
   };
   return ok(info);
 }

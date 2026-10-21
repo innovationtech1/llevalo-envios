@@ -29,8 +29,25 @@ export const DEFAULT_SETTINGS: Settings = {
   driverBase: 3,
   driverPerMile: 1.1,
   maxMiles: 30,
+  cancelFee: 5,
+  coverageMax: 100,
+  instantPayouts: true,
   edited: false
 };
+
+/** Cambia este valor cuando se modifiquen los términos: los nuevos pedidos guardan qué versión aceptaron. */
+export const TERMS_VERSION = '2026-10-20';
+export const DRIVER_TERMS_VERSION = '2026-10-20';
+
+export const PROHIBITED_ITEMS = [
+  'Dinero en efectivo, cheques, tarjetas de regalo o joyas de alto valor',
+  'Armas, municiones, explosivos o fuegos artificiales',
+  'Drogas ilegales, medicamentos controlados o artículos ilegales',
+  'Alcohol, tabaco o productos de vapeo',
+  'Materiales peligrosos, inflamables o tóxicos',
+  'Animales vivos o restos humanos',
+  'Comida o artículos que requieran refrigeración (por ahora)'
+];
 
 export const DEFAULT_ZONES: Zone[] = [
   { id: 'z1', name: 'San Antonio centro', prefixes: ['782'], local: true },

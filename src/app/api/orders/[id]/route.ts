@@ -3,7 +3,7 @@ import { orderActionSchema } from '@/server/schemas';
 import { getRepo } from '@/server/repo';
 import { currentUser, requireDriver } from '@/server/auth';
 import { canSee, isAdminRequest, publicJob } from '@/server/access';
-import { expireCheckout, refundIfPaid } from '@/server/payments';
+import { expireCheckout, payDriver, payDriverFee, paymentsMode, refund } from '@/server/payments';
 import type { OrderStatus } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -36,17 +36,24 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
     if (a.action === 'cancel') {
       const [user, admin] = await Promise.all([currentUser(req), isAdminRequest(req)]);
-      const owner = user && current.customerId === user.id;
+      const owner = Boolean(user && current.customerId === user.id);
       if (!owner && !admin) return fail(403, 'No puedes cancelar este envío');
-      // El cliente cancela mientras nadie lo ha aceptado; el admin, hasta antes de recogerlo.
-      const allowed: OrderStatus[] = admin ? ['por_pagar', 'pendiente', 'asignado'] : ['por_pagar', 'pendiente'];
-      if (!allowed.includes(current.status)) {
-        return fail(409, owner && !admin ? 'Ya hay un repartidor en camino; contáctanos para cancelar' : 'Este envío ya no se puede cancelar');
-      }
+      // Cliente y admin pueden cancelar hasta antes de que se recoja el paquete.
+      const allowed: OrderStatus[] = ['por_pagar', 'pendiente', 'asignado'];
+      if (!allowed.includes(current.status)) return fail(409, 'El paquete ya se recogió; contáctanos para resolverlo');
+
       if (current.status === 'por_pagar') await expireCheckout(current);
-      const payment = await refundIfPaid(current);
+      const settings = await repo.getSettings();
+      // Si el cliente cancela cuando un repartidor ya aceptó, se cobra el cargo de cancelación y se le paga al repartidor.
+      const fee = owner && !admin && current.status === 'asignado' ? Math.min(settings.cancelFee, current.price) : 0;
+      const payment = await refund(current, current.price - fee);
       const o = await repo.transition(id, allowed, 'cancelado', { payment });
-      return o ? ok(o) : fail(409, 'El envío cambió de estado. Recarga e intenta de nuevo.');
+      if (!o) return fail(409, 'El envío cambió de estado. Recarga e intenta de nuevo.');
+      if (fee > 0 && o.payment.method === 'tarjeta' && o.driver) {
+        const payout = await payDriverFee(o, fee);
+        return ok(await repo.patchOrder(id, { payout }));
+      }
+      return ok(o);
     }
 
     const g = await requireDriver(req);
@@ -56,6 +63,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
 
     switch (a.action) {
       case 'accept': {
+        const stored = await repo.getUser(me.id);
+        if (!stored?.driverTermsAt) return fail(409, 'Primero acepta el acuerdo de repartidor en "Cobros"');
+        if (paymentsMode() === 'stripe' && current.payment.method === 'tarjeta' && !stored.payoutsEnabled) {
+          return fail(409, 'Configura tu cuenta de cobros en "Cobros" para poder aceptar envíos');
+        }
         const active = await repo.listOrders({ driverId: me.id, status: ['asignado', 'recogido'] });
         if (active.length) return fail(409, 'Termina tu envío actual antes de aceptar otro');
         const o = await repo.transition(id, ['pendiente'], 'asignado', { driver: me });
@@ -73,9 +85,17 @@ export async function PATCH(req: Request, { params }: Ctx) {
       }
       case 'deliver': {
         if (!mine) return fail(403, 'Este envío lo tiene otro repartidor');
-        const payment = current.payment.method === 'efectivo' ? { ...current.payment, status: 'pagado' as const } : current.payment;
-        const o = await repo.transition(id, ['recogido'], 'entregado', { payment });
-        return o ? ok(o) : fail(409, 'Primero marca el paquete como recogido');
+        const cash = current.payment.method === 'efectivo';
+        const payment = cash ? { ...current.payment, status: 'pagado' as const } : current.payment;
+        const o = await repo.transition(id, ['recogido'], 'entregado', {
+          payment, payout: { status: cash ? 'no_aplica' : 'pendiente', amount: current.driverPay }
+        });
+        if (!o) return fail(409, 'Primero marca el paquete como recogido');
+        if (cash) return ok(o);
+        // Pago al repartidor en el momento (si falla, el admin puede reintentarlo).
+        const settings = await repo.getSettings();
+        const payout = await payDriver(o, settings.instantPayouts);
+        return ok(await repo.patchOrder(id, { payout }));
       }
     }
   } catch (e) {

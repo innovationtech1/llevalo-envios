@@ -39,6 +39,9 @@ export default function Home() {
             </button>
           ))}
         </div>
+        <nav className="row small" style={{ flexWrap: 'wrap', gap: 16, justifyContent: 'center' }} aria-label="Documentos legales">
+          <a href="/terminos">Términos</a><a href="/privacidad">Privacidad</a><a href="/acuerdo-repartidor">Acuerdo de repartidor</a>
+        </nav>
       </main>
     </div>
   );

@@ -1,9 +1,10 @@
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
-import type { AppInfo, Order, Place, QuoteResponse, Settings, SizeId, Suggestion, User, Zone } from '@/lib/types';
+import type { AppInfo, DriverPayoutsInfo, Order, Place, QuoteResponse, Settings, SizeId, Suggestion, User, Zone } from '@/lib/types';
 
 export type NewOrderBody = {
   pickup: Place; dropoff: Place; size: SizeId; when: 'ahora' | 'prog'; scheduledAt: string;
   senderName: string; recName: string; recPhone: string; notes: string;
+  declaredValue: number; acceptTerms: true;
 };
 
 export type OrderAction =
@@ -23,7 +24,7 @@ export function errorMessage(err: unknown, fallback = 'Algo salió mal. Intenta 
 export const api = createApi({
   reducerPath: 'api',
   baseQuery: fetchBaseQuery({ baseUrl: '/api', credentials: 'same-origin' }),
-  tagTypes: ['Order', 'Settings', 'Zones', 'Info', 'Me', 'Drivers'],
+  tagTypes: ['Order', 'Settings', 'Zones', 'Info', 'Me', 'Drivers', 'Payouts'],
   endpoints: (b) => ({
     info: b.query<AppInfo, void>({ query: () => 'info', providesTags: ['Info'] }),
 
@@ -111,7 +112,24 @@ export const api = createApi({
       invalidatesTags: [{ type: 'Order', id: 'LIST' }]
     }),
 
+    /* ---- cobros del repartidor ---- */
+    driverPayouts: b.query<DriverPayoutsInfo, void>({ query: () => 'driver/payouts', providesTags: ['Payouts'] }),
+    driverPayoutsAction: b.mutation<{ url?: string; user?: User }, 'acceptTerms' | 'onboard' | 'dashboard'>({
+      query: (action) => ({ url: 'driver/payouts', method: 'POST', body: { action } }),
+      async onQueryStarted(_arg, { dispatch, queryFulfilled }) {
+        try {
+          const { data } = await queryFulfilled;
+          if (data.user) dispatch(api.util.upsertQueryData('me', undefined, data.user));
+          dispatch(api.util.invalidateTags(['Payouts']));
+        } catch { /* error en pantalla */ }
+      }
+    }),
+
     /* ---- administrador ---- */
+    retryPayout: b.mutation<Order, string>({
+      query: (orderId) => ({ url: 'admin/payouts', method: 'POST', body: { orderId } }),
+      invalidatesTags: (_r, _e, id) => [{ type: 'Order', id }, { type: 'Order', id: 'LIST' }]
+    }),
     drivers: b.query<User[], void>({ query: () => 'admin/drivers', providesTags: ['Drivers'] }),
     setDriverStatus: b.mutation<User, { id: string; status: 'aprobado' | 'rechazado' | 'pendiente' }>({
       query: (body) => ({ url: 'admin/drivers', method: 'PATCH', body }),
@@ -125,5 +143,6 @@ export const {
   useSettingsQuery, useSaveSettingsMutation, useZonesQuery, useSaveZonesMutation,
   useLazyGeocodeQuery, useLazyAutocompleteQuery, useLazyPlaceDetailsQuery, useQuoteQuery,
   useOrdersQuery, useOrderQuery, useCreateOrderMutation, useOrderActionMutation, usePayOrderMutation,
-  useConfirmPaymentMutation, useClearOrdersMutation, useDriversQuery, useSetDriverStatusMutation
+  useConfirmPaymentMutation, useClearOrdersMutation, useDriversQuery, useSetDriverStatusMutation,
+  useDriverPayoutsQuery, useDriverPayoutsActionMutation, useRetryPayoutMutation
 } = api;

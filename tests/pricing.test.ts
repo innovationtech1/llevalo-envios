@@ -6,7 +6,7 @@ import type { Settings, Zone } from '../src/lib/types.ts';
 const settings: Settings = {
   base: 6, perMile: 1.75, minimum: 8,
   extras: { sobre: 0, pequeno: 0, mediano: 3, grande: 8 },
-  driverBase: 3, driverPerMile: 1.1, maxMiles: 30, edited: false
+  driverBase: 3, driverPerMile: 1.1, maxMiles: 30, cancelFee: 5, coverageMax: 100, instantPayouts: true, edited: false
 };
 
 test('aplica el precio mínimo en viajes cortos', () => {

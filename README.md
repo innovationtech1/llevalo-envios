@@ -41,7 +41,12 @@ Ver `.env.example`. Cada servicio se activa al poner su clave; sin ella, esa par
 
 ## Pagos
 
-Con Stripe, el pedido se crea como `por_pagar`, el cliente paga en Stripe Checkout y el pedido pasa a `pendiente` (visible para repartidores) cuando Stripe confirma el pago (webhook o al volver a la app). Si el cliente o el administrador cancelan, se reembolsa automáticamente.
+- **Cliente:** Stripe Checkout. El pedido se crea como `por_pagar` y pasa a `pendiente` (visible para repartidores) cuando Stripe confirma el pago (webhook o al volver a la app).
+- **Repartidor:** Stripe Connect con cuentas **Express** (Stripe verifica identidad, guarda datos fiscales y emite 1099). Al entregar se hace una transferencia con `source_transaction` = el cobro del cliente y, si `instantPayouts` está activo, un **Instant Payout** a su tarjeta de débito (~30 min, Stripe cobra 1%). Si no se puede, le llega en su depósito diario. El admin puede reintentar pagos fallidos.
+- **Cancelación:** gratis antes de que un repartidor acepte (reembolso total). Después, el cliente paga `cancelFee`, que se transfiere al repartidor, y se reembolsa el resto.
+- **Disputas:** el webhook `charge.dispute.created` marca el pedido y el panel avisa.
+- Los repartidores deben aceptar el acuerdo de contratista y tener su cuenta de cobros activa para aceptar envíos pagados con tarjeta.
+- Los clientes aceptan Términos (versión guardada en cada pedido), confirman que no envían artículos prohibidos y declaran el valor del paquete.
 
 ## Comandos
 

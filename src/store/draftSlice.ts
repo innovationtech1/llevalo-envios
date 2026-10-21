@@ -12,14 +12,16 @@ export interface DraftState {
   recName: string;
   recPhone: string;
   notes: string;
+  declaredValue: string;
+  acceptTerms: boolean;
 }
 
 const initialDraft: DraftState = {
   pickup: null, dropoff: null, size: 'pequeno', when: 'ahora', scheduledAt: '',
-  senderName: '', recName: '', recPhone: '', notes: ''
+  senderName: '', recName: '', recPhone: '', notes: '', declaredValue: '', acceptTerms: false
 };
 
-type TextField = 'scheduledAt' | 'senderName' | 'recName' | 'recPhone' | 'notes';
+type TextField = 'scheduledAt' | 'senderName' | 'recName' | 'recPhone' | 'notes' | 'declaredValue';
 
 const draftSlice = createSlice({
   name: 'draft',
@@ -32,9 +34,10 @@ const draftSlice = createSlice({
     prefillContact: (s, a: PayloadAction<{ name: string }>) => {
       if (!s.senderName) s.senderName = a.payload.name;
     },
+    setAcceptTerms: (s, a: PayloadAction<boolean>) => { s.acceptTerms = a.payload; },
     resetDraft: () => initialDraft
   }
 });
 
-export const { setPlace, setSize, setWhen, setField, prefillContact, resetDraft } = draftSlice.actions;
+export const { setPlace, setSize, setWhen, setField, setAcceptTerms, prefillContact, resetDraft } = draftSlice.actions;
 export default draftSlice.reducer;

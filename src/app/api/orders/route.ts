@@ -5,6 +5,7 @@ import { getRepo } from '@/server/repo';
 import { requireAdmin, requireDriver, requireUser } from '@/server/auth';
 import { publicJob } from '@/server/access';
 import { createCheckout, paymentsMode } from '@/server/payments';
+import { TERMS_VERSION } from '@/lib/constants';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,7 +64,8 @@ export async function POST(req: Request) {
       senderName: o.senderName, senderPhone: g.user.phone,
       recName: o.recName, recPhone: o.recPhone, notes: o.notes,
       miles: route.miles, minutes: route.minutes, price: quote.total, driverPay: quote.driverPay,
-      payment: { method: card ? 'tarjeta' : 'efectivo', status: 'pendiente' }
+      payment: { method: card ? 'tarjeta' : 'efectivo', status: 'pendiente' },
+      declaredValue: o.declaredValue, termsVersion: TERMS_VERSION, termsAt: Date.now()
     }, card ? 'por_pagar' : 'pendiente');
 
     if (!card) return ok({ order }, { status: 201 });

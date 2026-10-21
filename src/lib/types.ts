@@ -14,6 +14,11 @@ export interface User {
   driverStatus: DriverStatus;
   isAdmin: boolean;
   createdAt: number;
+  /** Cuenta de cobros en Stripe Connect (solo repartidores). */
+  stripeAccountId: string | null;
+  payoutsEnabled: boolean;
+  /** Fecha en que aceptó el acuerdo de contratista independiente. */
+  driverTermsAt: number | null;
 }
 
 export interface Place {
@@ -37,6 +42,12 @@ export interface Settings {
   driverBase: number;
   driverPerMile: number;
   maxMiles: number;
+  /** Cargo si el cliente cancela después de que un repartidor aceptó (se le paga al repartidor). */
+  cancelFee: number;
+  /** Máximo que cubrimos por paquete perdido o dañado. */
+  coverageMax: number;
+  /** Pagar al repartidor al instante al entregar (Stripe cobra 1%). */
+  instantPayouts: boolean;
   edited: boolean;
 }
 
@@ -55,9 +66,22 @@ export interface Driver {
 
 export interface Payment {
   method: 'tarjeta' | 'efectivo';
-  status: 'pendiente' | 'pagado' | 'reembolsado';
+  status: 'pendiente' | 'pagado' | 'reembolsado' | 'reembolso_parcial';
   sessionId?: string;
   paymentIntent?: string;
+  chargeId?: string;
+  refunded?: number;
+  disputed?: boolean;
+}
+
+/** Pago al repartidor por un envío. */
+export interface DriverPayout {
+  status: 'no_aplica' | 'pendiente' | 'transferido' | 'instantaneo' | 'estandar' | 'fallido';
+  amount: number;
+  transferId?: string;
+  payoutId?: string;
+  error?: string;
+  at?: number;
 }
 
 export interface HistoryEntry {
@@ -89,6 +113,12 @@ export interface Order {
   driver: Driver | null;
   photo: string | null;
   payment: Payment;
+  payout?: DriverPayout;
+  /** Valor que el cliente declaró del contenido (para la cobertura). */
+  declaredValue: number;
+  /** Versión de los términos que aceptó el cliente y cuándo. */
+  termsVersion: string;
+  termsAt: number;
 }
 
 export interface RouteInfo {
@@ -118,4 +148,14 @@ export interface AppInfo {
   payments: 'stripe' | 'efectivo';
   sms: 'twilio' | 'prueba';
   adminConfigured: boolean;
+  legalConfigured: boolean;
+}
+
+export interface DriverPayoutsInfo {
+  enabled: boolean;       // Stripe activado en la app
+  hasAccount: boolean;
+  payoutsEnabled: boolean;
+  termsAccepted: boolean;
+  balance: { available: number; pending: number; instant: number } | null;
+  instantCapable: boolean; // tiene tarjeta de débito o banco que acepta pagos instantáneos
 }

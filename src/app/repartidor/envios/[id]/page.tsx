@@ -40,7 +40,17 @@ function DriverOrder({ id, userId }: { id: string; userId: string }) {
   const deliver = async () => {
     if (!o) return;
     if (!o.photo && !confirm('¿Entregar sin foto?')) return;
-    if (await run({ id: o.id, action: 'deliver' }, `¡Entregado! Ganaste ${money(o.driverPay)}`)) router.push('/repartidor');
+    try {
+      const r = await act({ id: o.id, action: 'deliver' }).unwrap();
+      const p = r.payout?.status;
+      dispatch(showToast(
+        p === 'instantaneo' ? `¡Entregado! Te enviamos ${money(o.driverPay)} al instante`
+          : p === 'estandar' || p === 'transferido' ? `¡Entregado! ${money(o.driverPay)} llegan en tu próximo depósito`
+          : p === 'fallido' ? '¡Entregado! Hubo un problema con tu pago; el administrador lo revisará'
+          : `¡Entregado! Ganaste ${money(o.driverPay)}`
+      ));
+      router.push('/repartidor');
+    } catch (e) { dispatch(showToast(errorMessage(e))); }
   };
 
   if (isLoading) return <Skeletons n={3} />;
